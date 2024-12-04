@@ -1,0 +1,18 @@
+{
+  "serial": [
+    {
+      "url": "tcp://localhost:502",
+      "timeout": 300,
+      "speed": 19200,
+      "data_bits": 8,
+      "parity": 0,
+      "stop_bits": 1,
+      "slaves": [
+        {
+          "address": 111,
+          "hardware_maker": "pl-multi"
+        }
+      ]
+    }
+  ]
+}

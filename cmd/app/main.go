@@ -28,9 +28,7 @@ const (
 )
 
 var (
-	configPath    *string // base directory of config files
-	config        modbusmanager.Config
-	modbusAdapter modbusmanager.Adapter
+	configPath *string // base directory of config files
 )
 
 var baseStyle = lipgloss.NewStyle().
@@ -157,7 +155,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.currentRow.register.RawData = toFloat32(m.registerInput.Value())
 					}
 				}
-				err := modbusAdapter.WriteRegister(m.currentRow.register)
+				err := modbusmanager.WriteRegister(m.currentRow.register)
 				if err != nil {
 					slog.Error(err.Error())
 				}
@@ -205,8 +203,13 @@ func (m model) renderRegisterForm() string {
 	return baseStyle.Render(s)
 }
 
+func init() {
+	slog.Info("Initializing main")
+}
+
+var config modbusmanager.Config
+
 func main() {
-	slog.SetLogLoggerLevel(slog.LevelError)
 	configPath = flag.String("config", "config", "config base directory")
 	flag.Parse()
 
@@ -217,11 +220,7 @@ func main() {
 	if err := json.NewDecoder(bytes.NewReader(bb)).Decode(&config); err != nil {
 		log.Fatal(err)
 	}
-
-	modbusAdapter, err = modbusmanager.NewAdapter(config.Serial[0])
-	if err != nil {
-		log.Fatal(err)
-	}
+	modbusmanager.Init(config)
 
 	m := newModel()
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
@@ -284,19 +283,19 @@ func newGatewayModel() (modbusModel, error) {
 func (m modbusModel) update() (modbusModel, error) {
 	m.rows = nil
 	for _, s := range m.slaves {
-		discrete, err := modbusAdapter.ReadDiscrete(s.discrete)
+		discrete, err := modbusmanager.ReadDiscrete(s.discrete)
 		if err != nil {
 			return m, err
 		}
 		m.rows = append(m.rows, toRows(s, discrete)...)
 
-		input, err := modbusAdapter.ReadInput(s.input, 3)
+		input, err := modbusmanager.ReadInput(s.input, 3)
 		if err != nil {
 			return m, err
 		}
 		m.rows = append(m.rows, toRows(s, input)...)
 
-		holding, err := modbusAdapter.ReadHolding(s.holding, 3)
+		holding, err := modbusmanager.ReadHolding(s.holding, 3)
 		if err != nil {
 			return m, err
 		}

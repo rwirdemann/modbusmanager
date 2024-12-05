@@ -3,16 +3,18 @@ package modbusmanager
 import (
 	"fmt"
 	"github.com/simonvetter/modbus"
+	"log"
 	"log/slog"
 	"time"
 )
 
-type Adapter struct {
-	client *modbus.ModbusClient
-}
+var client *modbus.ModbusClient
 
-func NewAdapter(serial Serial) (Adapter, error) {
-	client, err := modbus.NewClient(&modbus.ClientConfiguration{
+func Init(config Config) {
+	slog.Info("Initializing Modbus")
+	serial := config.Serial[0]
+	var err error
+	client, err = modbus.NewClient(&modbus.ClientConfiguration{
 		URL:      serial.Url,
 		Speed:    uint(serial.Speed),
 		DataBits: uint(serial.DataBits),
@@ -20,31 +22,28 @@ func NewAdapter(serial Serial) (Adapter, error) {
 		StopBits: uint(serial.StopBits),
 		Timeout:  time.Duration(serial.Timeout) * time.Millisecond,
 	})
-
 	if err != nil {
-		return Adapter{}, err
+		log.Fatal(err)
 	}
 	if err = client.Open(); err != nil {
-		return Adapter{}, err
+		log.Fatal(err)
 	}
-	slog.Info("modbus configuration updated and reconnected to", "url", serial.Url)
-	return Adapter{client: client}, nil
 }
 
-func (a Adapter) WriteRegister(r Register) error {
-	if err := a.client.SetUnitId(r.SlaveAddress); err != nil {
+func WriteRegister(r Register) error {
+	if err := client.SetUnitId(r.SlaveAddress); err != nil {
 		return err
 	}
 
 	switch r.Datatype {
 	case "BOOL":
 		v := r.RawData.(bool)
-		if err := a.client.WriteCoil(r.Address, v); err != nil {
+		if err := client.WriteCoil(r.Address, v); err != nil {
 			return err
 		}
 	case "F32T1234":
 		v := r.RawData.(float32)
-		if err := a.client.WriteFloat32(r.Address, v); err != nil {
+		if err := client.WriteFloat32(r.Address, v); err != nil {
 			return err
 		}
 	default:
@@ -53,18 +52,18 @@ func (a Adapter) WriteRegister(r Register) error {
 	return nil
 }
 
-func (a Adapter) ReadDiscrete(register []Register) ([]Register, error) {
+func ReadDiscrete(register []Register) ([]Register, error) {
 	if len(register) == 0 {
 		return []Register{}, nil
 	}
 
-	if err := a.client.SetUnitId(register[0].SlaveAddress); err != nil {
+	if err := client.SetUnitId(register[0].SlaveAddress); err != nil {
 		return []Register{}, err
 	}
 
 	var rr []Register
 	for _, r := range register {
-		b, err := a.client.ReadDiscreteInput(r.Address)
+		b, err := client.ReadDiscreteInput(r.Address)
 		if err != nil {
 			return []Register{}, err
 		}
@@ -74,11 +73,11 @@ func (a Adapter) ReadDiscrete(register []Register) ([]Register, error) {
 	return rr, nil
 }
 
-func (a Adapter) ReadInput(input []Register, i int) ([]Register, error) {
+func ReadInput(input []Register, i int) ([]Register, error) {
 	return nil, nil
 
 }
 
-func (a Adapter) ReadHolding(holding []Register, i int) ([]Register, error) {
+func ReadHolding(holding []Register, i int) ([]Register, error) {
 	return nil, nil
 }

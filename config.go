@@ -1,9 +1,5 @@
 package modbusmanager
 
-type ConfigListener interface {
-	Listen(cb func(c Config))
-}
-
 type Serial struct {
 	Url      string  `json:"url"`
 	Timeout  int     `json:"timeout"`

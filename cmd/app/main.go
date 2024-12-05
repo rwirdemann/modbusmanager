@@ -36,12 +36,12 @@ var baseStyle = lipgloss.NewStyle().
 	BorderForeground(lipgloss.Color("240"))
 
 type model struct {
-	state         int
-	table         table.Model
-	modbusModel   modbusModel
-	propertyTable table.Model
-	currentRow    row
-	registerInput textinput.Model
+	state           int
+	table           table.Model
+	modbusModel     modbus
+	propertyTable   table.Model
+	currentRegister modbusmanager.Register
+	registerInput   textinput.Model
 }
 
 func newModel() model {
@@ -130,8 +130,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "enter":
-				m.currentRow = m.modbusModel.rows[m.table.Cursor()]
-				m.registerInput.SetValue(fmt.Sprintf("%v", m.currentRow.register.RawData))
+				m.currentRegister = m.modbusModel.registers[m.table.Cursor()]
+				m.registerInput.SetValue(fmt.Sprintf("%v", m.currentRegister.RawData))
 				m.registerInput.SetCursor(len(m.registerInput.Value()))
 				m.registerInput.Focus()
 				m.table.Blur()
@@ -143,19 +143,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.table.Focus()
 				m.state = stateRegisterList
 			case "enter":
-				switch m.currentRow.register.RegisterType {
+				switch m.currentRegister.RegisterType {
 				case "discrete":
-					m.currentRow.register.Datatype = "BOOL"
-					m.currentRow.register.RawData = toBool(m.registerInput.Value())
+					m.currentRegister.Datatype = "BOOL"
+					m.currentRegister.RawData = toBool(m.registerInput.Value())
 				case "holding", "input":
-					switch m.currentRow.register.Datatype {
+					switch m.currentRegister.Datatype {
 					case "T64T1234":
-						m.currentRow.register.RawData = toUnt64(m.registerInput.Value())
+						m.currentRegister.RawData = toUnt64(m.registerInput.Value())
 					case "F32T1234":
-						m.currentRow.register.RawData = toFloat32(m.registerInput.Value())
+						m.currentRegister.RawData = toFloat32(m.registerInput.Value())
 					}
 				}
-				err := modbusmanager.WriteRegister(m.currentRow.register)
+				err := modbusmanager.WriteRegister(m.currentRegister)
 				if err != nil {
 					slog.Error(err.Error())
 				}
@@ -197,7 +197,7 @@ func (m model) renderPropertyTable() string {
 }
 
 func (m model) renderRegisterForm() string {
-	s := fmt.Sprintf("Address: 0x%X\n\n", m.currentRow.register.Address)
+	s := fmt.Sprintf("Address: 0x%X\n\n", m.currentRegister.Address)
 	s += m.registerInput.View() + "\n\n"
 	s += "enter - save • esc - discard"
 	return baseStyle.Render(s)
@@ -256,9 +256,9 @@ func toUnt64(s string) uint64 {
 	return i
 }
 
-type modbusModel struct {
-	slaves []slave
-	rows   []row
+type modbus struct {
+	slaves    []slave
+	registers []modbusmanager.Register
 }
 
 type slave struct {
@@ -268,69 +268,64 @@ type slave struct {
 	holding  []modbusmanager.Register
 }
 
-type row struct {
-	device       string
-	slaveAddress string
-	register     modbusmanager.Register
-}
-
-func newGatewayModel() (modbusModel, error) {
-	m := modbusModel{}
+func newGatewayModel() (modbus, error) {
+	m := modbus{}
 	m.slaves = readConfig()
 	return m.update()
 }
 
-func (m modbusModel) update() (modbusModel, error) {
-	m.rows = nil
+func (m modbus) update() (modbus, error) {
+	var registers []modbusmanager.Register
 	for _, s := range m.slaves {
 		discrete, err := modbusmanager.ReadDiscrete(s.discrete)
 		if err != nil {
 			return m, err
 		}
-		m.rows = append(m.rows, toRows(s, discrete)...)
+		for _, r := range discrete {
+			registers = append(registers, r)
+		}
 
 		input, err := modbusmanager.ReadInput(s.input, 3)
 		if err != nil {
 			return m, err
 		}
-		m.rows = append(m.rows, toRows(s, input)...)
+		for _, r := range input {
+			registers = append(registers, r)
+		}
 
 		holding, err := modbusmanager.ReadHolding(s.holding, 3)
 		if err != nil {
 			return m, err
 		}
-		m.rows = append(m.rows, toRows(s, holding)...)
+		for _, r := range holding {
+			registers = append(registers, r)
+		}
 	}
+	m.registers = registers
 
 	return m, nil
 }
 
-func toRows(s slave, registers []modbusmanager.Register) []row {
-	var rows []row
-	for _, r := range registers {
-		rows = append(rows, row{
-			device:       s.name,
-			slaveAddress: fmt.Sprintf("%d", r.SlaveAddress),
-			register:     r,
-		})
+func (m modbus) tableRows() []table.Row {
+	var rows []table.Row
+	for _, s := range m.slaves {
+		for _, r := range m.registers {
+			rows = append(rows, buildTableRow(s.name, r))
+		}
 	}
 	return rows
 }
 
-func (m modbusModel) tableRows() []table.Row {
-	var rows []table.Row
-	for _, r := range m.rows {
-		rows = append(rows, table.Row{
-			r.device,
-			r.slaveAddress,
-			fmt.Sprintf("0x%X", r.register.Address),
-			r.register.Action,
-			r.register.Datatype,
-			r.register.RegisterType,
-			fmt.Sprintf("%v", r.register.RawData),
-		})
+func buildTableRow(slavename string, r modbusmanager.Register) table.Row {
+	return table.Row{
+		slavename,
+		fmt.Sprintf("0x%X", r.SlaveAddress),
+		fmt.Sprintf("0x%X", r.Address),
+		r.Action,
+		r.Datatype,
+		r.RegisterType,
+		fmt.Sprintf("%v", r.RawData),
 	}
-	return rows
 }
 
 func readConfig() []slave {

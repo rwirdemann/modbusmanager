@@ -73,8 +73,36 @@ func ReadDiscrete(register []Register) ([]Register, error) {
 	return rr, nil
 }
 
-func ReadInput(input []Register, i int) ([]Register, error) {
-	return nil, nil
+func ReadInput(register []Register, i int) ([]Register, error) {
+	if len(register) == 0 {
+		return []Register{}, nil
+	}
+
+	if err := client.SetUnitId(register[0].SlaveAddress); err != nil {
+		return []Register{}, err
+	}
+
+	var rr []Register
+	for _, r := range register {
+		if r.Datatype == "T64T1234" {
+			v, err := client.ReadUint64(r.Address, modbus.INPUT_REGISTER)
+			if err != nil {
+				return []Register{}, err
+			}
+			r.RawData = v
+			rr = append(rr, r)
+		}
+
+		if r.Datatype == "F32T1234" {
+			v, err := client.ReadFloat32(r.Address, modbus.INPUT_REGISTER)
+			if err != nil {
+				return []Register{}, err
+			}
+			r.RawData = v
+			rr = append(rr, r)
+		}
+	}
+	return rr, nil
 
 }
 
